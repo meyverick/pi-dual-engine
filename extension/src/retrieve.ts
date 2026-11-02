@@ -59,6 +59,7 @@ export async function executeEngineTool(
   handle: string,
 ): Promise<EngineOutcome> {
   const callable = Array.isArray(ctx.tools) ? ctx.tools : [];
-  const outcome = await ctx.executeTool(resolveRetrievalTool(engine, callable), { handle });
+  // Caveman's own retrieval tool takes `recovery_handle`; its schema rejects any other spelling.
+  const outcome = await ctx.executeTool(resolveRetrievalTool(engine, callable), { recovery_handle: handle });
   return { content: outcome.result.content, isError: outcome.isError };
 }

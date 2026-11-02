@@ -108,7 +108,7 @@ describe("engine dispatch through ctx.executeTool", () => {
     const caveman = await executeEngineTool(ctx, "caveman", "ccr_abc");
     const headroom = await executeEngineTool(ctx, "headroom", "0aa4e9800c25");
     expect(calls.map((call) => call.name)).toEqual(["caveman_retrieve", "mcp__headroom__headroom_retrieve"]);
-    expect(calls[0]?.args).toEqual({ handle: "ccr_abc" });
+    expect(calls[0]?.args).toEqual({ recovery_handle: "ccr_abc" });
     expect(caveman.content[0]).toEqual({ type: "text", text: payload });
     expect(headroom.isError).toBe(false);
   });

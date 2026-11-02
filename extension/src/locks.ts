@@ -57,10 +57,14 @@ export function lockPath(stateDir: string, engine: string, key: string): string 
   return join(stateDir, "locks", `${engine}-${key}.json`);
 }
 
-/** Deterministic per-key port so two sessions agree on where an engine for that key should be. */
+/**
+ * Deterministic per-key port so two sessions agree on where an engine for that key should be.
+ * The slot space is 100 wide: a 20-slot hash collided for two common provider names, and a
+ * collision costs that provider its compression for the session (it degrades to direct).
+ */
 export function portForKey(base: number, key: string): number {
   let hash = 0;
-  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 20;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 100;
   return base + hash;
 }
 

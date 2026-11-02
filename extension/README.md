@@ -56,6 +56,19 @@ Notices the lifecycle can emit, once per session each:
 - `Non-chat providers (<names>) are never routed through a compression engine.`
 - `This pi version cannot hide tool declarations, so the single retrieval tool was not registered.`
 
+## Retrieval
+
+One `retrieve` tool is model-visible; dispatch is decided by the handle shape, never by trying engines in sequence.
+
+| Handle | Path | Why |
+|---|---|---|
+| `ccr_*` | `ctx.executeTool("caveman_retrieve")` | Caveman's extension registers that tool; it owns the CCR store |
+| 12-24 hex | `POST http://127.0.0.1:<port>/v1/retrieve` with `{"hash": handle}` | Headroom keeps one on-disk store per machine, so any live instance serves any handle |
+
+The Headroom path deliberately does not depend on an MCP tool name. That name differs by backend (`mcp__headroom__headroom_retrieve` under pi's built-in MCP, a bare `headroom_retrieve` under an adapter that already prefixes by server name), and a server registered at runtime is not guaranteed to connect at all. Both names stay in the hidden set when they do exist. The MCP server is still registered for `headroom_compress` and `headroom_stats`; retrieval no longer needs it.
+
+Options on the Headroom path, chosen for the smallest number of round trips: one request per live port, stopping at the first HTTP answer, because a `404` is store-wide and another instance cannot change it; only a transport failure falls through to the next live port; a 2 s bound per attempt; the store's own `detail` is returned verbatim on a miss.
+
 ## Assignment report
 
 Every session writes `assignment.json` inside its state directory: one entry per provider with the engine that owns it, the families it carries, and the families left direct:

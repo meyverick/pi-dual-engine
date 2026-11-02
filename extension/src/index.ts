@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { onProviderResponse } from "./breaker.ts";
 import { ensureProvider } from "./engine-pool.ts";
 import { createRetrieveTool, executeEngineTool } from "./retrieve.ts";
+import { retrieveFromHeadroom } from "./headroom-http.ts";
 import { closeSession, openSession } from "./session.ts";
 import {
   type DualEngineOptions,
@@ -23,6 +24,9 @@ export function createDualEngine(options: DualEngineOptions = {}) {
     let session: SessionState | undefined;
     let registered = false;
 
+    /** Every live Headroom port this session knows about; any of them can serve any handle. */
+    const headroomPorts = (): number[] => (session ? [...new Set(session.ports.values())] : []);
+
     pi.registerCommand("dual-engine", {
       description: "Report each compression engine separately: owner, port, providers, requests.",
       handler: async (_args, ctx) => {
@@ -43,7 +47,12 @@ export function createDualEngine(options: DualEngineOptions = {}) {
         registered = true;
         pi.registerTool(
           createRetrieveTool({
-            resolve: (engine, handle, toolCtx) => executeEngineTool(toolCtx, engine, handle),
+            // Caveman answers through its own registered tool; Headroom answers over HTTP, because
+            // its CCR store is on disk and shared, and its MCP tool name depends on the MCP backend.
+            resolve: (engine, handle, toolCtx) =>
+              engine === "headroom"
+                ? retrieveFromHeadroom(headroomPorts(), handle)
+                : executeEngineTool(toolCtx, engine, handle),
           }),
         );
       }

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ProviderGroup } from "./assignment.ts";
-import { PREFERENCE, deriveAssignments, type AssignmentPlan } from "./assignment.ts";
+import { PREFERENCE, deriveAssignments } from "./assignment.ts";
 import { familyOf, hostOf } from "./families.ts";
 import { ensureEngine } from "./lifecycle.ts";
 import { planRegistrations, registerAll } from "./providers.ts";

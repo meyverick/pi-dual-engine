@@ -43,7 +43,7 @@ export function cavemanFamilyOf(key: string, compat: boolean): Family | undefine
  * MCP server names them `mcp__<server>__<tool>`; an MCP adapter that already prefixes by server name
  * exposes the bare form. Both are listed, so hiding never depends on which backend is loaded.
  */
-export const RETRIEVAL_TOOL_CANDIDATES: Record<EngineId, readonly string[]> = {
+export const RETRIEVAL_TOOL_CANDIDATES: Record<EngineId, readonly [string, ...string[]]> = {
   caveman: ["caveman_retrieve"],
   headroom: ["mcp__headroom__headroom_retrieve", "headroom_retrieve"],
 };
@@ -54,5 +54,5 @@ export function resolveRetrievalTool(
   callable: readonly { readonly name: string }[],
 ): string {
   const candidates = RETRIEVAL_TOOL_CANDIDATES[engine];
-  return candidates.find((name) => callable.some((tool) => tool.name === name)) ?? candidates[0]!;
+  return candidates.find((name) => callable.some((tool) => tool.name === name)) ?? candidates[0];
 }

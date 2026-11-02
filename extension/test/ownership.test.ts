@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ensureEngine, stopOwned } from "../src/lifecycle.ts";
-import { lockPath, readLock, takeLock } from "../src/locks.ts";
+import { lockPath, portForKey, readLock, takeLock } from "../src/locks.ts";
 import { harness, identify } from "./harness.ts";
 
 const dirs: string[] = [];
@@ -135,5 +135,26 @@ describe("engine ownership and ports", () => {
     expect(result.ok).toBe(true);
     if (result.ok) stopOwned(result.state, h.deps);
     expect(h.kills).toHaveLength(0);
+  });
+
+  test("per-key ports stay in their range and separate providers that shared a 20-slot bucket", () => {
+    const base = 8788;
+    const keys = [
+      "openrouter",
+      "commandcode",
+      "opencode",
+      "opencode-go",
+      "google",
+      "xiaomi-token-plan-ams",
+      "typesafe",
+    ];
+    const ports = keys.map((key) => portForKey(base, key));
+    for (const port of ports) {
+      expect(port).toBeGreaterThanOrEqual(base);
+      expect(port).toBeLessThan(base + 100);
+    }
+    // `opencode` and `typesafe` landed on the same slot at 20; the wider space must keep them apart.
+    expect(portForKey(base, "opencode")).not.toBe(portForKey(base, "typesafe"));
+    expect(new Set(ports).size).toBe(keys.length);
   });
 });

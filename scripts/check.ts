@@ -1,24 +1,37 @@
 #!/usr/bin/env bun
-/** Module gate: the six-slot contract. Slots 3 and 6 fail until this project's commands are added. */
+/** Module gate: the six-slot contract for the extension package. */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
+const pkg = join(root, "extension");
 const quick = process.argv.includes("--quick");
 const failures: string[] = [];
 const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8" });
 const EPIGRAPH = "> *Architected and directed by Human Intelligence, **implemented by AI**.*";
 
+function lane(slot: string, args: string[], cwd = pkg): void {
+  console.log(`  $ ${args.join(" ")}`);
+  const result = spawnSync(args[0] as string, args.slice(1), { cwd, stdio: "inherit" });
+  if (result.status !== 0) failures.push(`${slot} failed: ${args.join(" ")}`);
+}
+
+if (!existsSync(join(pkg, "package.json"))) {
+  console.error("FAIL: extension/package.json missing");
+  process.exit(1);
+}
+
 console.log("== 1/6 format ==");
-console.log("  skipped: no formatter configured");
+lane("slot 1", ["bun", "run", "format"]);
 
 console.log("== 2/6 lint ==");
-console.log("  skipped: no linter configured");
+lane("slot 2", ["bun", "run", "lint"]);
 
 console.log("== 3/6 native lanes ==");
-failures.push("slot 3: unconfigured - add format, lint, test and build to scripts/check.ts");
+lane("slot 3", ["bun", "run", "test"]);
+lane("slot 3", ["bun", "run", "build"]);
 
 console.log("== 4/6 tracked assets and docs ==");
 const readmePath = join(root, "README.md");
@@ -55,7 +68,7 @@ try {
 }
 
 console.log("== 6/6 smoke / runtime test ==");
-failures.push("slot 6: unconfigured - add an entrypoint smoke check to scripts/check.ts");
+lane("slot 6", ["bun", join(pkg, "scripts", "smoke.ts")], root);
 
 if (failures.length > 0) {
   for (const failure of failures) console.error(`  X ${failure}`);

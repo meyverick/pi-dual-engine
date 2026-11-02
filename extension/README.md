@@ -1,0 +1,69 @@
+> *Architected and directed by Human Intelligence, **implemented by AI**.*
+
+# dual-engine
+
+A pi extension that runs Caveman and Headroom side by side without stacking compression: one engine owns a given byte, and the model sees one recovery tool.
+
+## Install
+
+Three installs, no configuration file:
+
+1. `caveman enable pi` puts the harness layer in place.
+2. `uv tool install --python 3.13 "headroom-ai[mcp]"` puts the wire layer on `PATH`.
+3. Install this package so pi loads `dist/index.js`: copy the directory under `~/.pi/agent/extensions/dual-engine/` (its `package.json` carries `pi.extensions`), or add it as a pi package.
+
+On the first session the coordinator probes both engines, adopts one that already runs, starts one that is absent, derives which engine owns each provider, registers the Headroom-backed providers for this session only, and reports one retrieval tool. No file is edited, and no port is chosen by hand.
+
+## The two topologies
+
+- **T1, derived (default).** The wire family of each model decides the engine. Models whose API and base URL match a family an engine proves are carried by that engine; everything else runs direct. No provider name appears in the derivation.
+- **T2, assigned (opt-in).** Add `config.json` under the extension's state directory to pin one provider to one engine:
+
+```json
+{
+  "start": { "caveman": true, "headroom": true },
+  "assignment": [{ "provider": "example", "engine": "caveman" }],
+  "timeoutMs": 20000
+}
+```
+
+Configuration only narrows: unlisted providers keep the derived assignment, an unknown engine name or a duplicated entry is skipped with one notice, and the session still starts.
+
+## Engine lifecycle
+
+- Readiness is identity, not a listening socket. Caveman must answer `/health/live` with the instance token from its run-state file and report `recovery_via_mcp`; Headroom must answer `/livez` and name its upstreams in the loopback `/health` config block.
+- An engine that already runs is adopted and outlives the session. A process this session started is the only one it ever stops.
+- `start.enabled` defaults to **true** for both engines. Set `"start": { "caveman": false }` or `{ "headroom": false }` to defer to your own supervisor; the coordinator then reports the engine as unavailable and continues with the other one.
+- Ports: Caveman keeps its own default (8787). Headroom gets one instance per provider, each with one upstream flag per wire family, on a deterministic port derived from the provider id so two sessions agree where to look.
+- A per-port lock names the pid that started the engine; a lock whose pid is dead is taken over, a lock held by a live session is respected.
+- Spawning is lazy in the sense that only the engines a plan needs come up: Caveman once, Headroom for the provider that is being used.
+
+Notices the lifecycle can emit, once per session each:
+
+- `<engine> is unavailable (<reason>). The session continues without it.`
+- `headroom could not start for "<provider>" (<reason>); its models run direct.`
+- `Provider "<provider>": <families> routed direct because <engine> cannot carry that family.`
+- `Provider "<provider>" serves no wire family an engine can carry: running direct.`
+- `Conflicting assignments for provider "<provider>": the derived engine applies.`
+- `Unknown engine "<engine>" for provider "<provider>": the derived engine applies.`
+- `Proxy route for "<provider>" failed with <status>; ... stays direct for the session.`
+- `<mcp.json path> declares "headroom"; the user declaration takes precedence.`
+- `This pi version cannot hide tool declarations, so the single retrieval tool was not registered.`
+
+## Status semantics
+
+`/dual-engine` prints one labeled block per engine:
+
+```text
+headroom (adopted, port 8788)
+  providers: example
+  upstreams: openai@api.example.com
+  requests: 12  failures: 0
+```
+
+The two blocks are never summed. Caveman measures harness work on the transcript, Headroom measures wire compression of request bodies; the bases differ, so a combined figure would be a fabricated number. Read each block as that engine's own report.
+
+## Verified behaviour
+
+- `bun test` covers handle dispatch, engine derivation, identity probes, lifecycle adoption and ownership, retrieval dispatch, the degradation matrix, and the no-writes guarantee for user configuration.
+- `bun extension/scripts/smoke.ts` starts pi with the built extension, sends one prompt through a stub provider, and asserts the request declares exactly one retrieval tool.

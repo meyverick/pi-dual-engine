@@ -5,12 +5,14 @@
   "description": "One-owner-per-byte coordination between the Caveman harness engine and the Headroom wire engine.",
   "type": "module",
   "pi": {
-    "extensions": ["./dist/index.js"]
+    "extensions": [
+      "./dist/index.js"
+    ]
   },
   "scripts": {
     "build": "bun build src/index.ts --target=node --format=esm --outdir dist --external @earendil-works/pi-coding-agent --external @earendil-works/pi-ai --external typebox",
-    "format": "biome format src test",
-    "lint": "biome lint src test && tsc --noEmit",
+    "format": "biome format src test scripts",
+    "lint": "biome lint src test scripts && tsc --noEmit",
     "test": "bun test",
     "check": "bun run format && bun run lint && bun run test && bun run build"
   },

@@ -4,10 +4,24 @@ import { discoverEngines, startPlanned } from "./engine-pool.ts";
 import { familyOf, hostOf } from "./families.ts";
 import { stopOwned } from "./lifecycle.ts";
 import { planRegistrations, registerAll } from "./providers.ts";
+import type { ModelExtras } from "./providers.ts";
 import { type SessionDeps, type SessionState, groupChatModels } from "./state.ts";
 import type { EngineId, EngineState } from "./types.ts";
 
 const STATE_ORDER: readonly EngineId[] = ["caveman", "headroom"];
+
+/** Image and classifier models are never compressed, but a provider registration must not drop them. */
+function collectExtras(ctx: ExtensionContext): ModelExtras {
+  const extras = new Map<string, Record<string, unknown>[]>();
+  for (const type of ["image", "classifier"] as const) {
+    for (const model of ctx.modelRegistry.getModelsOfType(type)) {
+      const list = extras.get(model.provider) ?? [];
+      list.push(model as unknown as Record<string, unknown>);
+      extras.set(model.provider, list);
+    }
+  }
+  return extras;
+}
 
 /**
  * Probe what runs, start only the engines a plan needs, then register every provider whose engine
@@ -39,13 +53,16 @@ export async function openSession(
 
   const ports = new Map<string, number>();
   for (const [provider, state] of discovered.headroom) ports.set(provider, state.port);
+  const extras = collectExtras(ctx);
   registerAll(
     api,
     planRegistrations(
       derived.plans.filter((plan) => plan.engine === "headroom" && ports.has(plan.provider)),
       groups,
       ports,
+      extras,
     ),
+    (message) => deps.notify("warning", message),
   );
 
   reportDegradation(deps, discovered.engines, discovered.failures);
@@ -58,6 +75,7 @@ export async function openSession(
     failures: discovered.failures,
     plans: derived.plans,
     groups,
+    extras,
   };
 }
 

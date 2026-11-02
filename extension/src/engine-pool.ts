@@ -97,7 +97,11 @@ export async function ensureProvider(
   state.engines.push(probe.state);
   state.ports.set(provider, probe.state.port);
   if (!state.counters.has("headroom")) state.counters.set("headroom", { requests: 0, failures: 0 });
-  registerAll(api, planRegistrations([plan], state.groups, new Map([[provider, probe.state.port]])));
+  registerAll(
+    api,
+    planRegistrations([plan], state.groups, new Map([[provider, probe.state.port]]), state.extras),
+    (message) => deps.notify("warning", message),
+  );
 }
 
 export function registerModelled(api: ExtensionAPI, ctx: ExtensionContext): void {

@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AssignmentPlan, ProviderGroup } from "./assignment.ts";
 import type { LifecycleDeps } from "./lifecycle.ts";
+import type { ModelExtras } from "./providers.ts";
 import type { EngineId, EngineState } from "./types.ts";
 
 export type SessionState = {
@@ -13,6 +14,7 @@ export type SessionState = {
   readonly failures: Map<EngineId, string>;
   readonly plans: readonly AssignmentPlan[];
   readonly groups: readonly ProviderGroup[];
+  readonly extras: ModelExtras;
 };
 
 export type SessionDeps = {

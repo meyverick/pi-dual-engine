@@ -75,7 +75,12 @@ function toolNames(body: Record<string, unknown> | undefined): string[] {
 }
 
 async function main(): Promise<number> {
-  writeModels(server.port);
+  const port = server.port;
+  if (port === undefined) {
+    console.error("smoke: the stub provider server did not receive a port");
+    return 1;
+  }
+  writeModels(port);
   const proc = Bun.spawn({
     cmd: [
       "pi",
@@ -99,7 +104,10 @@ async function main(): Promise<number> {
     stderr: "pipe",
   });
   const timer = setTimeout(() => proc.kill(), 120_000);
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   clearTimeout(timer);
   const code = await proc.exited;
   if (code !== 0) {
@@ -113,10 +121,14 @@ async function main(): Promise<number> {
   const names = toolNames(bodies[0]);
   const retrieval = names.filter((name) => name.toLowerCase().includes("retrieve"));
   if (retrieval.length !== 1 || retrieval[0] !== "retrieve") {
-    console.error(`smoke: expected exactly one retrieval tool named retrieve, saw ${JSON.stringify(retrieval)}`);
+    console.error(
+      `smoke: expected exactly one retrieval tool named retrieve, saw ${JSON.stringify(retrieval)}`,
+    );
     return 1;
   }
-  console.log(`smoke: ok (${names.length} tools, retrieval=${retrieval[0]}, output=${stdout.trim().slice(0, 40)})`);
+  console.log(
+    `smoke: ok (${names.length} tools, retrieval=${retrieval[0]}, output=${stdout.trim().slice(0, 40)})`,
+  );
   return 0;
 }
 

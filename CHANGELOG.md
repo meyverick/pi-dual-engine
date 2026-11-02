@@ -17,3 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Six-slot module gate: format, lint, test and build lanes plus a headless pi smoke
   test that asserts one retrieval tool declaration.
 - Module wiki covering install, configuration, internals and extension points.
+
+### Fixed
+- Derive from credentialed chat models only, so an unusable provider never influences routing.
+- Register providers with an explicit model projection instead of runtime registry objects, which
+  broke `registerProvider` for every assigned provider.
+- Start the engines the current providers prefer before deriving, so a cold start is not a no-op.
+- Treat a proxy serving a different upstream as a foreign instance: refuse it and never spawn onto
+  its port.
+- Stop started engines at session end: resolve the listening pid for Headroom's forked worker and
+  use Caveman's own teardown for its proxy.

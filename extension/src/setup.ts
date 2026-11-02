@@ -63,15 +63,25 @@ export function buildDeps(options: DualEngineOptions): {
       cavemanHome,
       timeoutMs: config.timeoutMs,
       spawn: (command, args) => {
-        const child = spawnProcess(command, [...args], { stdio: "ignore", detached: false });
+        // Detached so a launcher that forks a worker (headroom) still yields one killable group.
+        const child = spawnProcess(command, [...args], { stdio: "ignore", detached: true });
         child.unref();
         return { pid: child.pid };
+      },
+      cavemanStop: () => {
+        try {
+          spawnProcess("caveman", ["stop"], { stdio: "ignore", detached: true }).unref();
+        } catch {}
       },
       // A spawned installer can exit before we stop it; ESRCH is normal, never fatal.
       kill: (pid) => {
         try {
-          process.kill(pid);
-        } catch {}
+          process.kill(-pid);
+        } catch {
+          try {
+            process.kill(pid);
+          } catch {}
+        }
       },
       now: () => Date.now(),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

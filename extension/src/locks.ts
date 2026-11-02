@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -71,4 +72,18 @@ export function portIsFree(port: number): Promise<boolean> {
     server.once("listening", () => server.close(() => resolve(true)));
     server.listen(port, "127.0.0.1");
   });
+}
+
+/**
+ * The pid actually listening on a loopback port. A launcher can fork a worker into its own session
+ * (headroom does), so the spawned pid is not the process to stop later.
+ */
+export function listeningPid(port: number): number | undefined {
+  try {
+    const output = execFileSync("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" });
+    const pid = Number(output.trim().split("\n")[0]);
+    return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
+  }
 }

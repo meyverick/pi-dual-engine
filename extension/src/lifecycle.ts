@@ -3,6 +3,7 @@ import {
   isAlive,
   HEADROOM_BASE_PORT,
   lockPath,
+  listeningPid,
   portForKey,
   readLock,
   releaseLock,
@@ -11,7 +12,8 @@ import {
   writeLock,
 } from "./locks.ts";
 import type { ProbeResult, probeCaveman, probeHeadroom } from "./probe.ts";
-import type { EngineState, Family } from "./types.ts";
+import { hostOf } from "./families.ts";
+import type { EngineState, Family, Upstream } from "./types.ts";
 
 export type Spawned = { readonly pid: number | undefined };
 
@@ -22,6 +24,8 @@ export type LifecycleDeps = {
   readonly timeoutMs: number;
   readonly spawn: (command: string, args: readonly string[]) => Spawned;
   readonly kill: (pid: number) => void;
+  /** Caveman's own teardown, used only for a proxy this session started through its door. */
+  readonly cavemanStop?: () => void;
   readonly probeCaveman: typeof probeCaveman;
   readonly probeHeadroom: typeof probeHeadroom;
   readonly now: () => number;
@@ -39,6 +43,14 @@ export type EnsureRequest =
 
 function engineKey(request: EnsureRequest): string {
   return request.engine === "caveman" ? "main" : request.key;
+}
+
+/** The upstreams an engine instance must serve for this request to count as ours. */
+function expected(request: EnsureRequest): readonly Upstream[] {
+  if (request.engine === "caveman") return [];
+  return request.upstreams
+    .map((upstream) => ({ family: upstream.family, host: hostOf(upstream.url) }))
+    .filter((upstream) => upstream.host !== "");
 }
 
 function enginePort(request: EnsureRequest): number {
@@ -67,7 +79,12 @@ async function waitForVerified(
     const result =
       request.engine === "caveman"
         ? await deps.probeCaveman({ port, home: deps.cavemanHome, timeoutMs: 2_000, owned: true })
-        : await deps.probeHeadroom({ port, timeoutMs: 2_000, owned: true });
+        : await deps.probeHeadroom({
+            port,
+            timeoutMs: 2_000,
+            owned: true,
+            expect: expected(request),
+          });
     if (result.ok) return result.state;
     if (deps.now() >= deadline) return undefined;
     await deps.sleep(250);
@@ -83,8 +100,10 @@ export async function ensureEngine(request: EnsureRequest, deps: LifecycleDeps):
   const adopted =
     request.engine === "caveman"
       ? await deps.probeCaveman({ port, home: deps.cavemanHome, timeoutMs: 2_000, owned: false })
-      : await deps.probeHeadroom({ port, timeoutMs: 2_000, owned: false });
+      : await deps.probeHeadroom({ port, timeoutMs: 2_000, owned: false, expect: expected(request) });
   if (adopted.ok) return adopted;
+  // Something else owns the port: binding it again cannot succeed, and routing through it would be worse.
+  if (adopted.occupied) return adopted;
   if (!request.start) return adopted;
 
   const path = lockPath(deps.stateDir, request.engine, engineKey(request));
@@ -93,8 +112,14 @@ export async function ensureEngine(request: EnsureRequest, deps: LifecycleDeps):
   const child = spawnEngine(request, port, deps);
   const state = await waitForVerified(request, port, deps);
   if (state) {
-    writeLock(path, { pid: child.pid ?? -1, port, startedAt: deps.now() });
-    return { ok: true, state };
+    // Record the process that will still be listening later, not the launcher that may exit.
+    const pid = request.engine === "headroom" ? (listeningPid(port) ?? child.pid) : child.pid;
+    writeLock(path, { pid: pid ?? -1, port, startedAt: deps.now() });
+    const tagged =
+      request.engine === "caveman"
+        ? { ...state, shutdown: "caveman" as const, key: engineKey(request) }
+        : { ...state, key: engineKey(request) };
+    return { ok: true, state: tagged };
   }
   if (child.pid !== undefined) deps.kill(child.pid);
   if (recorded?.pid === undefined) releaseLock(path);
@@ -102,14 +127,19 @@ export async function ensureEngine(request: EnsureRequest, deps: LifecycleDeps):
 }
 
 /** Stop only the pid this session started for an engine it owns. */
-export function stopOwned(state: EngineState, deps: Pick<LifecycleDeps, "stateDir" | "kill">): void {
+/** Stop only what this session started, and only through the door that created it. */
+export function stopOwned(
+  state: EngineState,
+  deps: Pick<LifecycleDeps, "stateDir" | "kill" | "cavemanStop">,
+): void {
   if (!state.owned) return;
   const path = lockPath(
     deps.stateDir,
     state.engine,
-    state.engine === "caveman" ? "main" : String(state.port),
+    state.key ?? (state.engine === "caveman" ? "main" : String(state.port)),
   );
   const lock = readLock(path);
-  if (lock && lock.pid > 0 && isAlive(lock.pid)) deps.kill(lock.pid);
+  if (state.shutdown === "caveman") deps.cavemanStop?.();
+  else if (lock && lock.pid > 0 && isAlive(lock.pid)) deps.kill(lock.pid);
   removeLock(path);
 }

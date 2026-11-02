@@ -64,6 +64,23 @@ describe("engine ownership and ports", () => {
     expect(readLock(path)?.pid).toBe(process.pid);
   });
 
+  test("a port held by a proxy serving another upstream is refused, never spawned onto", async () => {
+    const h = harness(
+      {
+        probeHeadroom: async () => ({
+          ok: false,
+          occupied: true,
+          reason: "Headroom on port 8801 serves openai@stale.example.com; expected openai@a.example.com",
+        }),
+      },
+      dirsPair(),
+    );
+    const result = await ensureEngine({ engine: "headroom", key: "aaa", start: true, upstreams }, h.deps);
+    expect(result.ok).toBe(false);
+    expect(h.spawns).toHaveLength(0);
+    if (!result.ok) expect(result.reason).toContain("stale.example.com");
+  });
+
   test("only a process this session started is stopped", () => {
     const h = harness({}, dirsPair());
     stopOwned({ engine: "caveman", port: 8787, upstreams: [], owned: false }, h.deps);
@@ -75,6 +92,41 @@ describe("engine ownership and ports", () => {
     stopOwned(owned, h.deps);
     expect(h.kills).toEqual([process.ppid]);
     expect(readLock(path)).toBeUndefined();
+  });
+
+  test("a started engine is stopped through the door that created it", () => {
+    const h = harness({}, dirsPair());
+    const stops: string[] = [];
+    const deps = { ...h.deps, cavemanStop: () => stops.push("caveman stop") };
+    const caveman = {
+      engine: "caveman" as const,
+      port: 8787,
+      upstreams: [],
+      owned: true,
+      shutdown: "caveman" as const,
+    };
+    const headroom = {
+      engine: "headroom" as const,
+      port: 8801,
+      upstreams: [],
+      owned: true,
+    };
+    mkdirSync(dirname(lockPath(h.deps.stateDir, "caveman", "main")), { recursive: true });
+    writeFileSync(
+      lockPath(h.deps.stateDir, "caveman", "main"),
+      JSON.stringify({ pid: process.ppid, port: 8787, startedAt: 0 }),
+      "utf8",
+    );
+    writeFileSync(
+      lockPath(h.deps.stateDir, "headroom", "8801"),
+      JSON.stringify({ pid: process.ppid, port: 8801, startedAt: 0 }),
+      "utf8",
+    );
+
+    stopOwned(caveman, deps);
+    stopOwned(headroom, deps);
+    expect(stops).toEqual(["caveman stop"]);
+    expect(h.kills).toEqual([process.ppid]);
   });
 
   test("adopted engines are never stopped at session end", async () => {

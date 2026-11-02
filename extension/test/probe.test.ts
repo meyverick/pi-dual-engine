@@ -155,6 +155,32 @@ describe("Headroom readiness", () => {
     expect(result.ok).toBe(false);
   });
 
+  test("a proxy serving a different upstream is a foreign instance, not readiness", async () => {
+    const port = await listen(healthy);
+    const result = await probeHeadroom({
+      port,
+      timeoutMs: 1000,
+      owned: false,
+      expect: [{ family: "openai", host: "other.example.com" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.occupied).toBe(true);
+      expect(result.reason).toContain("expected openai@other.example.com");
+    }
+  });
+
+  test("a proxy serving the expected upstream is ready when an expectation is given", async () => {
+    const port = await listen(healthy);
+    const result = await probeHeadroom({
+      port,
+      timeoutMs: 1000,
+      owned: false,
+      expect: [{ family: "openai", host: "openrouter.ai" }],
+    });
+    expect(result.ok).toBe(true);
+  });
+
   test("health without a proven upstream is not readiness", async () => {
     const port = await listen((request, response) => {
       response.writeHead(200, { "content-type": "application/json" });

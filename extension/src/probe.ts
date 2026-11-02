@@ -5,7 +5,12 @@ import type { EngineState, Family, Upstream } from "./types.ts";
 
 export type ProbeResult =
   | { readonly ok: true; readonly state: EngineState }
-  | { readonly ok: false; readonly reason: string };
+  | {
+      readonly ok: false;
+      readonly reason: string;
+      /** True when something answered on the port but its identity is not the one we need. */
+      readonly occupied?: boolean;
+    };
 
 type Json = Record<string, unknown>;
 
@@ -80,7 +85,11 @@ export async function probeCaveman(options: {
 
   const token = headers.get(CAVEMAN_INSTANCE_HEADER);
   if (!token || token !== recorded.instance_token) {
-    return { ok: false, reason: "Caveman health instance token does not match its run state" };
+    return {
+      ok: false,
+      occupied: true,
+      reason: `port ${options.port} answers, but its instance token does not match the Caveman run state`,
+    };
   }
 
   const upstreams = [
@@ -98,12 +107,18 @@ export async function probeHeadroom(options: {
   port: number;
   timeoutMs: number;
   owned: boolean;
+  /** Upstreams the caller needs. A proxy serving different ones is a foreign instance, not readiness. */
+  expect?: readonly Upstream[];
 }): Promise<ProbeResult> {
   const base = `http://127.0.0.1:${options.port}`;
   try {
     const live = await getJson(`${base}/livez`, options.timeoutMs);
     if (live.service !== HEADROOM_SERVICE) {
-      return { ok: false, reason: `port ${options.port} answers but is not a Headroom proxy` };
+      return {
+        ok: false,
+        occupied: true,
+        reason: `port ${options.port} answers but is not a Headroom proxy`,
+      };
     }
     const health = await getJson(`${base}/health`, options.timeoutMs);
     if (health.service !== HEADROOM_SERVICE) {
@@ -115,7 +130,23 @@ export async function probeHeadroom(options: {
       const host = hostOf(typeof config[key] === "string" ? (config[key] as string) : undefined);
       if (host) upstreams.push({ family, host });
     }
-    if (upstreams.length === 0) return { ok: false, reason: "Headroom health names no upstream" };
+    if (upstreams.length === 0) {
+      return { ok: false, occupied: true, reason: `Headroom on port ${options.port} names no upstream` };
+    }
+    const served = (upstream: Upstream): string => `${upstream.family}@${upstream.host}`;
+    const missing = (options.expect ?? []).filter(
+      (expected) =>
+        !upstreams.some((upstream) => upstream.family === expected.family && upstream.host === expected.host),
+    );
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        occupied: true,
+        reason: `Headroom on port ${options.port} serves ${upstreams.map(served).join(", ")}; expected ${missing
+          .map(served)
+          .join(", ")}`,
+      };
+    }
     return { ok: true, state: { engine: "headroom", port: options.port, upstreams, owned: options.owned } };
   } catch (error) {
     return { ok: false, reason: `Headroom unreachable: ${(error as Error).message}` };

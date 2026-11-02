@@ -16,6 +16,10 @@ export type EngineState = {
   readonly upstreams: readonly Upstream[];
   /** True only when this session started the process; adopted engines are never stopped. */
   readonly owned: boolean;
+  /** Caveman's proxy is started by its own door, so its own teardown is what stops it. */
+  readonly shutdown?: "caveman";
+  /** The lock key this instance was recorded under: a provider for the wire engine, otherwise "main". */
+  readonly key?: string;
 };
 
 /** A distinct (family, host) pair across one provider's models. */

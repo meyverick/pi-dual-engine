@@ -35,7 +35,9 @@ Configuration only narrows: unlisted providers keep the derived assignment, an u
 - An engine that already runs is adopted and outlives the session. A process this session started is the only one it ever stops.
 - `start.enabled` defaults to **true** for both engines. Set `"start": { "caveman": false }` or `{ "headroom": false }` to defer to your own supervisor; the coordinator then reports the engine as unavailable and continues with the other one.
 - Ports: Caveman keeps its own default (8787). Headroom gets one instance per provider, each with one upstream flag per wire family, on a deterministic port derived from the provider id so two sessions agree where to look.
-- A per-port lock names the pid that started the engine; a lock whose pid is dead is taken over, a lock held by a live session is respected.
+- A per-port lock names the pid that started the engine; a lock whose pid is dead is taken over, a lock held by a live session is respected. The Headroom lock records the process actually listening on the port, because its launcher forks a worker into its own session.
+- Caveman's own `execute.proxy` setting is authoritative: when it is `false`, `caveman enable pi` declines to spawn a proxy, and the coordinator degrades once to the wire engine instead of overriding that choice.
+- Started engines stop at session end: Headroom by pid, Caveman through its own `caveman stop` door, because its proxy is a child of that door and not of the coordinator.
 - Spawning is lazy in the sense that only the engines a plan needs come up: Caveman once, Headroom for the provider that is being used. A provider the harness engine currently carries is upgraded to the wire engine the first time that provider is selected, if it proves the host.
 - Caveman is started through its own door (`caveman enable pi`), which installs its extension for subsequent sessions. If no Caveman proxy is running in the current session, the coordinator reports it once and continues on Headroom rather than spawning the proxy binary itself.
 

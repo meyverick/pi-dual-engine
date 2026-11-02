@@ -42,6 +42,19 @@ describe("single retrieval surface", () => {
     expect(Object.keys(changes ?? {})).toEqual(["hiddenDeclarations"]);
   });
 
+  test("an adapter that names the tool without the MCP prefix is hidden too", () => {
+    const { definition } = tool(() => ({ content: [], isError: false }));
+    const changes = definition.prepareLoadout?.({
+      declared: [],
+      callable: [],
+      registered: [{ name: "caveman_retrieve" }, { name: "headroom_retrieve" }],
+      getExposure: () => "direct",
+      getNamespace: () => undefined,
+      getPromptGuidelines: () => [],
+    } as never);
+    expect(changes?.hiddenDeclarations).toEqual(["caveman_retrieve", "headroom_retrieve"]);
+  });
+
   test("a Caveman handle reaches Caveman and a Headroom handle reaches Headroom", async () => {
     const { calls, run } = tool((engine) => ({ content: [{ type: "text", text: engine }], isError: false }));
     await run("ccr_abc123");
@@ -106,5 +119,19 @@ describe("engine dispatch through ctx.executeTool", () => {
     } as never;
     const outcome = await executeEngineTool(ctx, "headroom", "0aa4e9800c25");
     expect(outcome.isError).toBe(true);
+  });
+
+  test("dispatch follows the name the runtime actually registered", async () => {
+    const calls: string[] = [];
+    const ctx = {
+      tools: [{ name: "headroom_retrieve" }],
+      executeTool: async (name: string) => {
+        calls.push(name);
+        return { result: { content: [{ type: "text", text: "ok" }] }, isError: false };
+      },
+    } as never;
+    const outcome = await executeEngineTool(ctx, "headroom", "0aa4e9800c25");
+    expect(calls).toEqual(["headroom_retrieve"]);
+    expect(outcome.isError).toBe(false);
   });
 });

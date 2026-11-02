@@ -43,5 +43,5 @@ export type CoordinatorConfig = {
 export const DEFAULT_CONFIG: CoordinatorConfig = {
   start: { caveman: true, headroom: true },
   assignment: [],
-  timeoutMs: 20_000,
+  timeoutMs: 30_000,
 };

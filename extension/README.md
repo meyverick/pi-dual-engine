@@ -9,21 +9,23 @@ A pi extension that runs Caveman and Headroom side by side without stacking comp
 Three installs, no configuration file:
 
 1. `caveman enable pi` puts the harness layer in place.
-2. `uv tool install --python 3.13 "headroom-ai[mcp]"` puts the wire layer on `PATH`.
+2. `uv tool install --python 3.13 "headroom-ai[proxy]"` puts the wire layer on `PATH`. The `[proxy]`
+   extra carries `fastapi`/`uvicorn`/`openai` and the MCP server; `[mcp]` alone can serve tools but
+   cannot run `headroom proxy`. Use `[all]` for Headroom's full engine.
 3. Install this package so pi loads `dist/index.js`: copy the directory under `~/.pi/agent/extensions/dual-engine/` (its `package.json` carries `pi.extensions`), or add it as a pi package.
 
 On the first session the coordinator probes both engines, adopts one that already runs, starts one that is absent, derives which engine owns each provider, registers the Headroom-backed providers for this session only, and reports one retrieval tool. No file is edited, and no port is chosen by hand.
 
 ## The two topologies
 
-- **T1, derived (default).** The wire family of each model decides the engine. Models whose API and base URL match a family an engine proves are carried by that engine; everything else runs direct. No provider name appears in the derivation.
+- **T1, derived (default).** The wire family of each model decides the engine. Models whose API and base URL match a family an engine proves are carried by that engine; everything else runs direct. No provider name appears in the derivation. At session start the preferred engine comes up only for the selected provider, so providers nobody selects stay on the engine that already proves them, and upgrade on their first selection.
 - **T2, assigned (opt-in).** Add `config.json` under the extension's state directory to pin one provider to one engine:
 
 ```json
 {
   "start": { "caveman": true, "headroom": true },
   "assignment": [{ "provider": "example", "engine": "caveman" }],
-  "timeoutMs": 20000
+  "timeoutMs": 30000
 }
 ```
 

@@ -150,4 +150,44 @@ describe("derived assignment", () => {
     expect(plan?.direct).toEqual(["gemini"]);
     expect(plan?.upstreams.every((upstream) => upstream.family !== "gemini")).toBe(true);
   });
+
+  test("a provider is carried by exactly one engine", () => {
+    const groups = [
+      group("aaa", [{ api: "openai-completions", baseUrl: "https://a.example.com/v1" }]),
+      group("bbb", [{ api: "openai-completions", baseUrl: "https://b.example.com/v1" }]),
+    ];
+    const engines = [
+      engine("headroom", [{ family: "openai", host: "a.example.com" }]),
+      engine("caveman", [{ family: "openai", host: "b.example.com" }]),
+    ];
+    const { plans } = deriveAssignments(groups, engines, [], helpers);
+    expect(plans).toHaveLength(groups.length);
+    expect(new Set(plans.map((plan) => plan.provider)).size).toBe(groups.length);
+    expect(plans.map((plan) => plan.engine).sort()).toEqual(["caveman", "headroom"]);
+  });
+
+  test("a provider added after an earlier derivation is planned without configuration", () => {
+    const early = deriveAssignments(
+      [group("aaa", [{ api: "openai-completions", baseUrl: "https://a.example.com/v1" }])],
+      [engine("headroom", [{ family: "openai", host: "a.example.com" }])],
+      [],
+      helpers,
+    );
+    expect(early.plans.map((plan) => plan.provider)).toEqual(["aaa"]);
+
+    const later = deriveAssignments(
+      [
+        group("aaa", [{ api: "openai-completions", baseUrl: "https://a.example.com/v1" }]),
+        group("bbb", [{ api: "openai-completions", baseUrl: "https://b.example.com/v1" }]),
+      ],
+      [
+        engine("headroom", [{ family: "openai", host: "a.example.com" }]),
+        engine("caveman", [{ family: "openai", host: "b.example.com" }]),
+      ],
+      [],
+      helpers,
+    );
+    expect(later.plans.map((plan) => plan.provider).sort()).toEqual(["aaa", "bbb"]);
+    expect(later.plans.find((plan) => plan.provider === "bbb")?.engine).toBe("caveman");
+  });
 });

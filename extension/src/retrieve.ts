@@ -1,6 +1,6 @@
 import type { AgentToolResult, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { RETRIEVAL_TOOLS } from "./families.ts";
+import { RETRIEVAL_TOOL_CANDIDATES, resolveRetrievalTool } from "./families.ts";
 import { dispatchHandle } from "./handles.ts";
 import type { EngineId } from "./types.ts";
 
@@ -36,9 +36,9 @@ export function createRetrieveTool(deps: RetrieveDeps): ToolDefinition<typeof pa
       "Restore an original compressed by Caveman or Headroom. Pass the recovery handle exactly as it appeared in the marker.",
     parameters,
     prepareLoadout: (loadout) => ({
-      hiddenDeclarations: Object.values(RETRIEVAL_TOOLS).filter((name) =>
-        loadout.registered.some((tool) => tool.name === name),
-      ),
+      hiddenDeclarations: Object.values(RETRIEVAL_TOOL_CANDIDATES)
+        .flat()
+        .filter((name) => loadout.registered.some((tool) => tool.name === name)),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const target = dispatchHandle(params.handle);
@@ -58,6 +58,7 @@ export async function executeEngineTool(
   engine: EngineId,
   handle: string,
 ): Promise<EngineOutcome> {
-  const outcome = await ctx.executeTool(RETRIEVAL_TOOLS[engine], { handle });
+  const callable = Array.isArray(ctx.tools) ? ctx.tools : [];
+  const outcome = await ctx.executeTool(resolveRetrievalTool(engine, callable), { handle });
   return { content: outcome.result.content, isError: outcome.isError };
 }

@@ -112,6 +112,39 @@ describe("extension surface", () => {
     expect(readdirSync(agentDir).sort()).toEqual(listing);
   });
 
+  test("the assignment report names every provider with its families and engine", async () => {
+    const { stateDir } = await boot({ models, caveman: healthyCaveman, headroom: healthyHeadroom });
+    const report = JSON.parse(readFileSync(join(stateDir, "assignment.json"), "utf8")) as {
+      providers: { provider: string; engine: string | null; families: string[]; direct: string[] }[];
+    };
+    expect(report.providers).toEqual([
+      { provider: "aaa", engine: "headroom", families: ["openai"], direct: [] },
+      { provider: "bbb", engine: "caveman", families: ["gemini"], direct: [] },
+    ]);
+  });
+
+  test("a provider with no chat models is reported direct and named once", async () => {
+    const classifier = chatModel(
+      "typesafe",
+      "typesafe-classifier",
+      "typesafe.example.com",
+      "classifier-model",
+    );
+    const { notices, stateDir } = await boot({
+      models,
+      caveman: healthyCaveman,
+      headroom: healthyHeadroom,
+      extras: { classifier: [classifier] },
+    });
+    const report = JSON.parse(readFileSync(join(stateDir, "assignment.json"), "utf8")) as {
+      providers: { provider: string; engine: string | null }[];
+    };
+    expect(report.providers.find((entry) => entry.provider === "typesafe")?.engine).toBeNull();
+    const named = notices.filter((notice) => notice.message.includes("Non-chat providers"));
+    expect(named).toHaveLength(1);
+    expect(named[0]?.message).toContain("typesafe");
+  });
+
   test("the status command reports each engine under its own label", async () => {
     const { pi } = await boot({ models, caveman: healthyCaveman, headroom: healthyHeadroom });
     const command = pi.commands.find((entry) => entry.name === "dual-engine");

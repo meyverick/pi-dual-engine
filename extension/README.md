@@ -36,7 +36,8 @@ Configuration only narrows: unlisted providers keep the derived assignment, an u
 - `start.enabled` defaults to **true** for both engines. Set `"start": { "caveman": false }` or `{ "headroom": false }` to defer to your own supervisor; the coordinator then reports the engine as unavailable and continues with the other one.
 - Ports: Caveman keeps its own default (8787). Headroom gets one instance per provider, each with one upstream flag per wire family, on a deterministic port derived from the provider id so two sessions agree where to look.
 - A per-port lock names the pid that started the engine; a lock whose pid is dead is taken over, a lock held by a live session is respected.
-- Spawning is lazy in the sense that only the engines a plan needs come up: Caveman once, Headroom for the provider that is being used.
+- Spawning is lazy in the sense that only the engines a plan needs come up: Caveman once, Headroom for the provider that is being used. A provider the harness engine currently carries is upgraded to the wire engine the first time that provider is selected, if it proves the host.
+- Caveman is started through its own door (`caveman enable pi`), which installs its extension for subsequent sessions. If no Caveman proxy is running in the current session, the coordinator reports it once and continues on Headroom rather than spawning the proxy binary itself.
 
 Notices the lifecycle can emit, once per session each:
 
@@ -48,7 +49,18 @@ Notices the lifecycle can emit, once per session each:
 - `Unknown engine "<engine>" for provider "<provider>": the derived engine applies.`
 - `Proxy route for "<provider>" failed with <status>; ... stays direct for the session.`
 - `<mcp.json path> declares "headroom"; the user declaration takes precedence.`
+- `Non-chat providers (<names>) are never routed through a compression engine.`
 - `This pi version cannot hide tool declarations, so the single retrieval tool was not registered.`
+
+## Assignment report
+
+Every session writes `assignment.json` inside its state directory: one entry per provider with the engine that owns it, the families it carries, and the families left direct:
+
+```json
+{ "providers": [{ "provider": "example", "engine": "headroom", "families": ["openai"], "direct": ["gemini"] }] }
+```
+
+`engine: null` means the provider runs direct. The report is rewritten on every session and never touches user configuration.
 
 ## Status semantics
 

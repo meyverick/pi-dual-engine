@@ -15,7 +15,19 @@ function engine(
 }
 
 function group(provider: string, models: { api: string; baseUrl: string }[]): ProviderGroup {
-  return { provider, models: models.map((model, index) => ({ id: `${provider}-${index}`, ...model })) };
+  return {
+    provider,
+    models: models.map((model, index) => ({
+      id: `${provider}-${index}`,
+      name: `${provider}-${index}`,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000,
+      maxTokens: 100,
+      ...model,
+    })),
+  };
 }
 
 describe("derived assignment", () => {

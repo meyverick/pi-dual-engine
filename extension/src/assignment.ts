@@ -1,10 +1,26 @@
 import type { EngineId, EngineState, Family, ProviderFamily } from "./types.ts";
 
-export type ProviderModel = { readonly id: string; readonly api: string; readonly baseUrl?: string };
+export type ProviderModel = {
+  readonly id: string;
+  readonly name: string;
+  readonly api: string;
+  readonly baseUrl?: string;
+  readonly reasoning: boolean;
+  readonly input: readonly ("text" | "image")[];
+  readonly cost: {
+    readonly input: number;
+    readonly output: number;
+    readonly cacheRead: number;
+    readonly cacheWrite: number;
+  };
+  readonly contextWindow: number;
+  readonly maxTokens: number;
+};
 export type ProviderGroup = { readonly provider: string; readonly models: readonly ProviderModel[] };
 
 /** Family preference is policy about wire families, never about provider names. */
-const PREFERENCE: Record<Family, readonly EngineId[]> = {
+/** The engine that should carry a family when it is available, in preference order. */
+export const PREFERENCE: Record<Family, readonly EngineId[]> = {
   openai: ["headroom", "caveman"],
   anthropic: ["headroom", "caveman"],
   gemini: ["caveman", "headroom"],

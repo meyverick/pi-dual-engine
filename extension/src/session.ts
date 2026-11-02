@@ -1,8 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { deriveAssignments, type AssignmentPlan, type ProviderGroup } from "./assignment.ts";
-import { discoverEngines, startPlanned } from "./engine-pool.ts";
+import { discoverEngines, startNeeded } from "./engine-pool.ts";
 import { familyOf, hostOf } from "./families.ts";
 import { stopOwned } from "./lifecycle.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { planRegistrations, registerAll } from "./providers.ts";
 import type { ModelExtras } from "./providers.ts";
 import { type SessionDeps, type SessionState, groupChatModels } from "./state.ts";
@@ -32,28 +34,23 @@ export async function openSession(
   ctx: ExtensionContext,
   deps: SessionDeps,
 ): Promise<SessionState> {
-  const groups = groupChatModels(ctx);
+  const groups = await groupChatModels(ctx);
+  const extras = collectExtras(ctx);
   const directModels = new Map<string, NonNullable<ExtensionContext["model"]>>();
   for (const model of ctx.modelRegistry.getModelsOfType("chat")) {
     if (!directModels.has(model.provider)) directModels.set(model.provider, model);
   }
 
   const discovered = await discoverEngines(groups, deps);
-  const provisional = deriveAssignments(groups, discovered.engines, deps.overrides, { familyOf, hostOf });
-  const currentProvider = ctx.model?.provider;
-  await startPlanned(
-    discovered,
-    provisional.plans.filter((plan) => plan.provider === currentProvider),
-    deps,
-  );
+  await startNeeded(groups, ctx.model?.provider, discovered, deps);
 
   const derived = deriveAssignments(groups, discovered.engines, deps.overrides, { familyOf, hostOf });
   for (const notice of derived.notices) deps.notify("warning", notice);
   reportUncompressedResponses(groups, derived.plans, deps);
+  writeAssignmentReport(deps, groups, derived.plans, extras);
 
   const ports = new Map<string, number>();
   for (const [provider, state] of discovered.headroom) ports.set(provider, state.port);
-  const extras = collectExtras(ctx);
   registerAll(
     api,
     planRegistrations(
@@ -73,10 +70,47 @@ export async function openSession(
     counters: new Map(discovered.engines.map((engine) => [engine.engine, { requests: 0, failures: 0 }])),
     tripped: new Set<string>(),
     failures: discovered.failures,
-    plans: derived.plans,
+    plans: [...derived.plans],
     groups,
     extras,
   };
+}
+
+/** One durable report the operator and the gates can read: every provider, its families and its engine. */
+function writeAssignmentReport(
+  deps: SessionDeps,
+  groups: readonly ProviderGroup[],
+  plans: readonly AssignmentPlan[],
+  extras: ModelExtras,
+): void {
+  const chat = groups.map((group) => {
+    const plan = plans.find((entry) => entry.provider === group.provider);
+    return {
+      provider: group.provider,
+      engine: plan?.engine ?? null,
+      families: plan?.families ?? [],
+      direct: plan?.direct ?? [...new Set(group.models.map((model) => model.api))],
+    };
+  });
+  const named = new Set(chat.map((entry) => entry.provider));
+  const chatless = [...extras.keys()].filter((provider) => !named.has(provider));
+  if (chatless.length > 0) {
+    deps.notify(
+      "info",
+      `Non-chat providers (${chatless.join(", ")}) are never routed through a compression engine.`,
+    );
+  }
+  const report = {
+    providers: [
+      ...chat,
+      ...chatless.map((provider) => ({ provider, engine: null, families: [], direct: [] })),
+    ],
+  };
+  try {
+    writeFileSync(join(deps.lifecycle.stateDir, "assignment.json"), JSON.stringify(report, null, 2), "utf8");
+  } catch {
+    deps.notify("warning", "Could not write the assignment report; the session continues.");
+  }
 }
 
 function reportUncompressedResponses(

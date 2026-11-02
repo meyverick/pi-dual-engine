@@ -71,9 +71,9 @@ describe("engine ownership and ports", () => {
     const owned = { engine: "caveman" as const, port: 8787, upstreams: [], owned: true };
     const path = lockPath(h.deps.stateDir, "caveman", "main");
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ pid: 5151, port: 8787, startedAt: 0 }), "utf8");
+    writeFileSync(path, JSON.stringify({ pid: process.ppid, port: 8787, startedAt: 0 }), "utf8");
     stopOwned(owned, h.deps);
-    expect(h.kills).toEqual([5151]);
+    expect(h.kills).toEqual([process.ppid]);
     expect(readLock(path)).toBeUndefined();
   });
 

@@ -25,6 +25,7 @@ export type BootOptions = {
   readonly exposure?: boolean;
   readonly config?: unknown;
   readonly mcpServers?: Record<string, unknown>;
+  readonly extras?: { image?: readonly ChatModel[]; classifier?: readonly ChatModel[] };
 };
 
 export type Booted = {
@@ -46,9 +47,10 @@ export async function boot(options: BootOptions): Promise<Booted> {
   }
   mkdirSync(agentDir, { recursive: true });
 
-  const pi = makePi(options.models, { exposure: options.exposure });
+  const pi = makePi(options.models, { exposure: options.exposure, extras: options.extras });
   const notify = (type: "info" | "warning" | "error", message: string) => pi.notices.push({ type, message });
   const providers = new Map<string, string>();
+  let clock = 0;
   for (const model of options.models)
     providers.set(String(portForKey(HEADROOM_BASE_PORT, model.provider)), model.provider);
 
@@ -64,8 +66,10 @@ export async function boot(options: BootOptions): Promise<Booted> {
         timeoutMs: 50,
         spawn: () => ({ pid: undefined }),
         kill: () => {},
-        now: () => 0,
-        sleep: async () => {},
+        now: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
         probeCaveman: async () => options.caveman ?? { ok: false, reason: "caveman down" },
         probeHeadroom: async ({ port }) => {
           const provider = providers.get(String(port)) ?? "";

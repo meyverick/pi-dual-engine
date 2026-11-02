@@ -21,7 +21,17 @@ export function planProviderConfig(
   const chat = group.models.map((model) => {
     const family = familyOf(model.api);
     const carried = family !== undefined && plan.families.includes(family);
-    return { ...model, baseUrl: carried ? proxyUrl : model.baseUrl };
+    return {
+      id: model.id,
+      name: model.name,
+      api: model.api,
+      reasoning: model.reasoning,
+      input: model.input,
+      cost: model.cost,
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
+      baseUrl: carried ? proxyUrl : model.baseUrl,
+    };
   });
   const rest = extras.get(plan.provider) ?? [];
   return { baseUrl: proxyUrl, models: [...chat, ...rest] } as ProviderConfig;

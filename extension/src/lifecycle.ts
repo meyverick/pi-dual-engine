@@ -1,5 +1,6 @@
 import {
   CAVEMAN_DEFAULT_PORT,
+  isAlive,
   HEADROOM_BASE_PORT,
   lockPath,
   portForKey,
@@ -109,6 +110,6 @@ export function stopOwned(state: EngineState, deps: Pick<LifecycleDeps, "stateDi
     state.engine === "caveman" ? "main" : String(state.port),
   );
   const lock = readLock(path);
-  if (lock && lock.pid > 0) deps.kill(lock.pid);
+  if (lock && lock.pid > 0 && isAlive(lock.pid)) deps.kill(lock.pid);
   removeLock(path);
 }

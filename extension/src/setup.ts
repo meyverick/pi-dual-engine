@@ -67,7 +67,12 @@ export function buildDeps(options: DualEngineOptions): {
         child.unref();
         return { pid: child.pid };
       },
-      kill: (pid) => process.kill(pid),
+      // A spawned installer can exit before we stop it; ESRCH is normal, never fatal.
+      kill: (pid) => {
+        try {
+          process.kill(pid);
+        } catch {}
+      },
       now: () => Date.now(),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       probeCaveman,

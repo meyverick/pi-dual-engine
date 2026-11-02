@@ -1,10 +1,11 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ProviderGroup } from "./assignment.ts";
-import { familyOf } from "./families.ts";
+import { PREFERENCE, deriveAssignments, type AssignmentPlan } from "./assignment.ts";
+import { familyOf, hostOf } from "./families.ts";
 import { ensureEngine } from "./lifecycle.ts";
 import { planRegistrations, registerAll } from "./providers.ts";
 import type { SessionDeps, SessionState } from "./state.ts";
-import type { EngineId, EngineState } from "./types.ts";
+import type { EngineId, EngineState, Family } from "./types.ts";
 
 export type Discovered = {
   readonly engines: EngineState[];
@@ -44,47 +45,97 @@ export async function discoverEngines(
 }
 
 /** Start the engines a plan needs, in the order the plans need them. */
-export async function startPlanned(
+/**
+ * Cold start has no proven plan yet, so the preference table drives it: the current provider's
+ * families choose the engines that must come up before an assignment can be derived.
+ */
+export async function startNeeded(
+  groups: readonly ProviderGroup[],
+  currentProvider: string | undefined,
   discovered: Discovered,
-  plans: readonly {
-    provider: string;
-    engine: EngineId;
-    upstreams: readonly { family: string; url: string }[];
-  }[],
   deps: SessionDeps,
 ): Promise<void> {
-  for (const plan of plans) {
-    if (plan.engine !== "headroom" || discovered.headroom.has(plan.provider)) continue;
-    const probe = await ensureEngine(
-      {
-        engine: "headroom",
-        key: plan.provider,
-        start: deps.start.headroom,
-        upstreams: plan.upstreams as never,
-      },
-      deps.lifecycle,
+  const families = new Map<string, { family: NonNullable<ReturnType<typeof familyOf>>; url: string }[]>();
+  for (const group of groups) {
+    families.set(
+      group.provider,
+      group.models
+        .map((model) => ({ family: familyOf(model.api), url: model.baseUrl ?? "" }))
+        .filter((entry): entry is { family: NonNullable<ReturnType<typeof familyOf>>; url: string } =>
+          Boolean(entry.family && entry.url),
+        ),
     );
-    if (probe.ok) {
-      discovered.headroom.set(plan.provider, probe.state);
-      discovered.engines.push(probe.state);
-      discovered.failures.delete("headroom");
-    } else {
-      discovered.failures.set("headroom", probe.reason);
-    }
+  }
+
+  const wantsCaveman = [...families.values()].some((list) =>
+    list.some((entry) => PREFERENCE[entry.family][0] === "caveman"),
+  );
+  if (wantsCaveman && !hasEngine(discovered, "caveman") && deps.start.caveman) {
+    await startCaveman(discovered, deps);
+  }
+
+  if (currentProvider !== undefined)
+    await startHeadroom(currentProvider, families.get(currentProvider) ?? [], discovered, deps);
+}
+
+function hasEngine(discovered: Discovered, engine: "caveman" | "headroom"): boolean {
+  return discovered.engines.some((state) => state.engine === engine);
+}
+
+async function startCaveman(discovered: Discovered, deps: SessionDeps): Promise<void> {
+  const probe = await ensureEngine({ engine: "caveman", start: true }, deps.lifecycle);
+  if (probe.ok) {
+    discovered.engines.push(probe.state);
+    discovered.failures.delete("caveman");
+  } else {
+    discovered.failures.set("caveman", probe.reason);
   }
 }
 
-/** Start the engine a provider needs the first time that provider is selected. */
+async function startHeadroom(
+  provider: string,
+  families: readonly { family: Family; url: string }[],
+  discovered: Discovered,
+  deps: SessionDeps,
+): Promise<void> {
+  if (discovered.headroom.has(provider) || !deps.start.headroom) return;
+  if (!families.some((entry) => PREFERENCE[entry.family][0] === "headroom")) return;
+  const upstreams = [...new Map(families.map((entry) => [entry.family, entry])).values()];
+  const probe = await ensureEngine(
+    { engine: "headroom", key: provider, start: true, upstreams },
+    deps.lifecycle,
+  );
+  if (probe.ok) {
+    discovered.headroom.set(provider, probe.state);
+    discovered.engines.push(probe.state);
+    discovered.failures.delete("headroom");
+  } else {
+    discovered.failures.set("headroom", probe.reason);
+  }
+}
+
+/**
+ * First selection of a provider is when its engine comes up. A provider the harness engine currently
+ * carries is upgraded to the wire engine when the family preference wants it and it proves the host.
+ */
 export async function ensureProvider(
   api: ExtensionAPI,
   state: SessionState,
   provider: string,
   deps: SessionDeps,
 ): Promise<void> {
-  const plan = state.plans.find((entry) => entry.provider === provider);
-  if (!plan || plan.engine === "caveman" || state.ports.has(provider)) return;
+  const group = state.groups.find((entry) => entry.provider === provider);
+  const families = (group?.models ?? [])
+    .map((model) => ({ family: familyOf(model.api), url: model.baseUrl ?? "" }))
+    .filter((entry): entry is { family: NonNullable<ReturnType<typeof familyOf>>; url: string } =>
+      Boolean(entry.family && entry.url),
+    );
+  const wanted = families.some((entry) => PREFERENCE[entry.family][0] === "headroom");
+  if (!wanted || state.ports.has(provider)) return;
+
+  const upstreams = [...new Map(families.map((entry) => [entry.family, entry])).values()];
   const probe = await ensureEngine(
-    { engine: "headroom", key: provider, start: deps.start.headroom, upstreams: plan.upstreams },
+    { engine: "headroom", key: provider, start: deps.start.headroom, upstreams },
     deps.lifecycle,
   );
   if (!probe.ok) {
@@ -97,14 +148,16 @@ export async function ensureProvider(
   state.engines.push(probe.state);
   state.ports.set(provider, probe.state.port);
   if (!state.counters.has("headroom")) state.counters.set("headroom", { requests: 0, failures: 0 });
+
+  const derived = deriveAssignments(state.groups, state.engines, deps.overrides, { familyOf, hostOf });
+  const updated = derived.plans.find((plan) => plan.provider === provider);
+  if (!updated) return;
+  const index = state.plans.findIndex((plan) => plan.provider === provider);
+  if (index >= 0) state.plans[index] = updated;
+  if (updated.engine !== "headroom") return;
   registerAll(
     api,
-    planRegistrations([plan], state.groups, new Map([[provider, probe.state.port]]), state.extras),
+    planRegistrations([updated], state.groups, new Map([[provider, probe.state.port]]), state.extras),
     (message) => deps.notify("warning", message),
   );
-}
-
-export function registerModelled(api: ExtensionAPI, ctx: ExtensionContext): void {
-  void api;
-  void ctx;
 }

@@ -13,8 +13,28 @@ const plan: AssignmentPlan = {
 const group: ProviderGroup = {
   provider: "aaa",
   models: [
-    { id: "chat", api: "openai-completions", baseUrl: "https://a.example.com/v1" },
-    { id: "gemini", api: "google-generative-ai", baseUrl: "https://b.example.com/v1" },
+    {
+      id: "chat",
+      name: "chat",
+      api: "openai-completions",
+      baseUrl: "https://a.example.com/v1",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000,
+      maxTokens: 100,
+    },
+    {
+      id: "gemini",
+      name: "gemini",
+      api: "google-generative-ai",
+      baseUrl: "https://b.example.com/v1",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000,
+      maxTokens: 100,
+    },
   ],
 };
 

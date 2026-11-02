@@ -46,7 +46,10 @@ export type FakeCtx = {
   ui: { notify(message: string, type?: "info" | "warning" | "error"): void };
   model: ChatModel | undefined;
   setModel(model: ChatModel): Promise<boolean>;
-  modelRegistry: { getModelsOfType(type: "chat"): readonly ChatModel[] };
+  modelRegistry: {
+    getModelsOfType(type: "chat"): readonly ChatModel[];
+    getAvailableOfType(type: "chat"): Promise<readonly ChatModel[]>;
+  };
   executeTool(
     name: string,
     args: unknown,
@@ -54,7 +57,9 @@ export type FakeCtx = {
   calls: { name: string; args: unknown }[];
 };
 
-export function makeCtx(models: readonly ChatModel[], current?: ChatModel): FakeCtx {
+type Extras = Partial<Record<"image" | "classifier", readonly ChatModel[]>>;
+
+export function makeCtx(models: readonly ChatModel[], current?: ChatModel, extras: Extras = {}): FakeCtx {
   const calls: { name: string; args: unknown }[] = [];
   const ctx: FakeCtx = {
     ui: { notify: () => {} },
@@ -64,7 +69,11 @@ export function makeCtx(models: readonly ChatModel[], current?: ChatModel): Fake
       ctx.model = model;
       return true;
     },
-    modelRegistry: { getModelsOfType: () => models },
+    modelRegistry: {
+      getModelsOfType: (type: string) =>
+        type === "chat" ? models : (extras[type as "image" | "classifier"] ?? []),
+      getAvailableOfType: async () => models,
+    },
     executeTool: async (name, args) => {
       calls.push({ name, args });
       return {
@@ -76,7 +85,10 @@ export function makeCtx(models: readonly ChatModel[], current?: ChatModel): Fake
   return ctx;
 }
 
-export function makePi(models: readonly ChatModel[], options: { exposure?: boolean } = {}): FakePi {
+export function makePi(
+  models: readonly ChatModel[],
+  options: { exposure?: boolean; extras?: Extras } = {},
+): FakePi {
   const tools: FakePi["tools"] = [];
   const providers: FakePi["providers"] = [];
   const mcp: FakePi["mcp"] = [];
@@ -84,7 +96,7 @@ export function makePi(models: readonly ChatModel[], options: { exposure?: boole
   const handlers = new Map<string, ((event: unknown, ctx: FakeCtx) => Promise<void>)[]>();
   const notices: { type: string; message: string }[] = [];
   const setModelCalls: ChatModel[] = [];
-  const ctx = makeCtx(models);
+  const ctx = makeCtx(models, undefined, options.extras);
   ctx.ui.notify = (message, type = "info") => {
     notices.push({ type, message });
   };

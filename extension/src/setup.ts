@@ -1,7 +1,7 @@
 import { spawn as spawnProcess } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.ts";
 import { probeCaveman, probeHeadroom } from "./probe.ts";
@@ -40,6 +40,111 @@ export function resolvePaths(options: DualEngineOptions): {
   };
 }
 
+/** Windows npm shims (`.cmd`/`.bat`) cannot run via `CreateProcessW`; resolve them to a direct launch.
+ * Mirrors `@caveman-ai/cli` `portableInvocation`: Node shims exec through `process.execPath`, real
+ * binaries run directly, always with `shell: false` so no console window is allocated. */
+const WINDOWS_SHIM_MAX_BYTES = 256 * 1024;
+const WINDOWS_SHIM_MAX_DEPTH = 4;
+
+function parseWindowsNestedShim(source: string): string | null {
+  const match = source.match(/"([^"\r\n]+\.(?:cmd|bat))"[ \t]+%\*/i);
+  return match?.[1] ?? null;
+}
+
+function parseWindowsNodeShim(source: string): string | null {
+  const match = source.match(/["']?%_prog%["']?[ \t]+["']?%dp0%[\\/]([^"'\r\n]+)["']?[ \t]+%\*/i);
+  return match?.[1] ?? null;
+}
+
+function parseWindowsExeShim(source: string): string | null {
+  const match = source.match(/["']?%dp0%[\\/]([^"'\r\n]+\.exe)["']?[ \t]+%\*/i);
+  return match?.[1] ?? null;
+}
+
+function resolveWindowsNodeShim(executable: string, depth = 0, seen = new Set<string>()): string {
+  if (depth > WINDOWS_SHIM_MAX_DEPTH) throw new Error("Windows command shim nesting too deep");
+  const normalized = resolve(executable);
+  const key = normalized.toLowerCase();
+  if (seen.has(key)) throw new Error("Windows command shim cycle");
+  seen.add(key);
+  const stat = statSync(normalized);
+  if (!stat.isFile() || stat.size > WINDOWS_SHIM_MAX_BYTES) {
+    throw new Error(`cannot safely launch Windows command shim: ${normalized}`);
+  }
+  const source = readFileSync(normalized, "utf8");
+  const forwardsToBatch = /"[^"\r\n]+\.(?:cmd|bat)"[ \t]+%\*/i.test(source);
+  const jsTarget = forwardsToBatch ? null : parseWindowsNodeShim(source);
+  const nested = parseWindowsNestedShim(source);
+  const exeTarget = forwardsToBatch || jsTarget ? null : parseWindowsExeShim(source);
+  const child = jsTarget ?? nested ?? exeTarget;
+  if (!child) throw new Error(`cannot safely launch non-Node Windows command shim: ${normalized}`);
+  const target =
+    /^[A-Za-z]:[\\/]/.test(child) || isAbsolute(child)
+      ? child
+      : resolve(dirname(normalized), ...child.split(/[\\/]+/));
+  if (!existsSync(target) || !statSync(target).isFile()) {
+    throw new Error(`Windows command shim target is missing: ${target}`);
+  }
+  if (jsTarget || (!nested && exeTarget)) return target;
+  return resolveWindowsNodeShim(target, depth + 1, seen);
+}
+
+function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const pathExt = env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD";
+  const names = extname(command)
+    ? [command]
+    : pathExt.split(";").map((ext) => command + (ext.startsWith(".") ? ext : `.${ext}`));
+  if (isAbsolute(command) || /[\\/]/.test(command)) {
+    for (const name of names) if (existsSync(name)) return name;
+    return existsSync(command) ? command : undefined;
+  }
+  for (const directory of (env.PATH ?? "").split(";")) {
+    if (!directory) continue;
+    for (const name of names) {
+      const candidate = join(directory, name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
+export function portableInvocation(
+  command: string,
+  args: readonly string[],
+  platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  if (platform !== "win32") return { command, args: [...args] };
+  const executable = resolveWindowsCommand(command, env) ?? command;
+  if (!/\.(?:cmd|bat)$/i.test(executable)) return { command: executable, args: [...args] };
+  try {
+    const target = resolveWindowsNodeShim(executable);
+    return /\.exe$/i.test(target)
+      ? { command: target, args: [...args] }
+      : { command: process.execPath, args: [target, ...args] };
+  } catch {
+    return { command: executable, args: [...args] };
+  }
+}
+
+/** Fire-and-forget daemon launch; failures are contained so the probe/degrade path reports them. */
+function spawnDaemon(command: string, args: readonly string[]): { pid: number | undefined } {
+  try {
+    const inv = portableInvocation(command, args);
+    const child = spawnProcess(inv.command, inv.args, {
+      stdio: "ignore",
+      detached: true,
+      shell: false,
+      windowsHide: true,
+    });
+    child.on("error", () => {});
+    child.unref();
+    return { pid: child.pid };
+  } catch {
+    return { pid: undefined };
+  }
+}
+
 /** Notices are collected until a session context exists, then flushed once. */
 export function buildDeps(options: DualEngineOptions): {
   deps: SessionDeps;
@@ -64,14 +169,10 @@ export function buildDeps(options: DualEngineOptions): {
       timeoutMs: config.timeoutMs,
       spawn: (command, args) => {
         // Detached so a launcher that forks a worker (headroom) still yields one killable group.
-        const child = spawnProcess(command, [...args], { stdio: "ignore", detached: true });
-        child.unref();
-        return { pid: child.pid };
+        return spawnDaemon(command, args);
       },
       cavemanStop: () => {
-        try {
-          spawnProcess("caveman", ["stop"], { stdio: "ignore", detached: true }).unref();
-        } catch {}
+        spawnDaemon("caveman", ["stop"]);
       },
       // A spawned installer can exit before we stop it; ESRCH is normal, never fatal.
       kill: (pid) => {
@@ -80,7 +181,9 @@ export function buildDeps(options: DualEngineOptions): {
         } catch {
           try {
             process.kill(pid);
-          } catch {}
+          } catch {
+            // ESRCH: process already gone; nothing to stop.
+          }
         }
       },
       now: () => Date.now(),

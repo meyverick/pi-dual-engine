@@ -1,8 +1,8 @@
 {
-  "name": "pi-extension-dual-engine",
+  "name": "pi-dual-engine",
   "version": "0.1.0",
   "private": true,
-  "description": "One-owner-per-byte coordination between the Caveman harness engine and the Headroom wire engine.",
+  "description": "One-owner-per-byte coordination between the Caveman harness engine and the Headroom wire engine (dual-engine).",
   "type": "module",
   "pi": {
     "extensions": [

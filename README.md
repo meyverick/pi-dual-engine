@@ -6,9 +6,9 @@ This directory is the single codebase submodule: it holds the application source
 
 ## Packages
 
-| Package | What it is |
-|---|---|
-| `extension/` | `dual-engine`, a TypeScript pi extension that coordinates the Caveman harness engine with the Headroom wire engine. |
+| Package      | What it is                                                                                                                                 |
+|--------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| `extension/` | `dual-engine` (npm `pi-dual-engine`), a TypeScript pi extension that coordinates the Caveman harness engine with the Headroom wire engine. |
 
 ## Why it exists
 

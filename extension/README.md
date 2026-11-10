@@ -12,7 +12,7 @@ Three installs, no configuration file:
 2. `uv tool install --python 3.13 "headroom-ai[proxy]"` puts the wire layer on `PATH`. The `[proxy]`
    extra carries `fastapi`/`uvicorn`/`openai` and the MCP server; `[mcp]` alone can serve tools but
    cannot run `headroom proxy`. Use `[all]` for Headroom's full engine.
-3. Install this package so pi loads `dist/index.js`: copy the directory under `~/.pi/agent/extensions/dual-engine/` (its `package.json` carries `pi.extensions`), or add it as a pi package.
+3. Install this package (`pi-dual-engine`) so pi loads `dist/index.js`: copy the directory under `~/.pi/agent/extensions/dual-engine/` (its `package.json` carries `pi.extensions`), or add it as a pi package.
 
 On the first session the coordinator probes both engines, adopts one that already runs, starts one that is absent, derives which engine owns each provider, registers the Headroom-backed providers for this session only, and reports one retrieval tool. No file is edited, and no port is chosen by hand.
 
@@ -68,6 +68,12 @@ One `retrieve` tool is model-visible; dispatch is decided by the handle shape, n
 The Headroom path deliberately does not depend on an MCP tool name. That name differs by backend (`mcp__headroom__headroom_retrieve` under pi's built-in MCP, a bare `headroom_retrieve` under an adapter that already prefixes by server name), and a server registered at runtime is not guaranteed to connect at all. Both names stay in the hidden set when they do exist. The MCP server is still registered for `headroom_compress` and `headroom_stats`; retrieval no longer needs it.
 
 Options on the Headroom path, chosen for the smallest number of round trips: one request per live port, stopping at the first HTTP answer, because a `404` is store-wide and another instance cannot change it; only a transport failure falls through to the next live port; a 2 s bound per attempt; the store's own `detail` is returned verbatim on a miss.
+
+### Recovered content is not exempt from the harness rewrite
+
+Caveman's proxy rewrites large tool results on their way into the transcript, and it exempts only its own retrieval tool names (`caveman_retrieve`, `mcp__caveman__caveman_retrieve`, `caveman_caveman_retrieve`). The coordinator's tool is named `retrieve`, so a large JSON recovery is re-encoded as TOON exactly like any other large JSON tool result.
+
+The guarantee is therefore semantic, not byte-for-byte: TOON is a lossless JSON round trip, so every field and value survives, and the rewrite is size-gated — a 640-byte source recovery arrives untouched, while a 120-row JSON original comes back re-encoded. No configuration in either engine can exempt a tool name today, so this is recorded rather than worked around.
 
 ## Assignment report
 

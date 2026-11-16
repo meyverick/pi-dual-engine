@@ -46,6 +46,81 @@ describe("provider registration", () => {
     expect(models.find((model) => model.id === "gemini")?.baseUrl).toBe("https://b.example.com/v1");
   });
 
+  test("thinkingLevelMap with xhigh/max survives re-registration", () => {
+    const mapped: ProviderGroup = {
+      provider: "aaa",
+      models: [
+        {
+          id: "spark",
+          name: "spark",
+          api: "openai-completions",
+          baseUrl: "https://a.example.com/v1",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1000,
+          maxTokens: 100,
+          thinkingLevelMap: { minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+        },
+      ],
+    };
+    const config = planProviderConfig(plan, mapped, "http://127.0.0.1:8801");
+    const models = config.models as { id: string; thinkingLevelMap?: Record<string, string | null> }[];
+    expect(models.find((model) => model.id === "spark")?.thinkingLevelMap?.["xhigh"]).toBe("xhigh");
+  });
+
+  test("null-disabled thinking levels stay disabled", () => {
+    const mapped: ProviderGroup = {
+      provider: "aaa",
+      models: [
+        {
+          id: "spark",
+          name: "spark",
+          api: "openai-completions",
+          baseUrl: "https://a.example.com/v1",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1000,
+          maxTokens: 100,
+          thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high" },
+        },
+      ],
+    };
+    const config = planProviderConfig(plan, mapped, "http://127.0.0.1:8801");
+    const models = config.models as { id: string; thinkingLevelMap?: Record<string, string | null> }[];
+    const found = models.find((model) => model.id === "spark")?.thinkingLevelMap;
+    expect(found && "off" in found && found["off"]).toBeNull();
+    expect(found?.["low"]).toBe("low");
+  });
+
+  test("optional compat/inputLimits survive with scoped baseUrl override", () => {
+    const mapped: ProviderGroup = {
+      provider: "aaa",
+      models: [
+        {
+          id: "chat",
+          name: "chat",
+          api: "openai-completions",
+          baseUrl: "https://a.example.com/v1",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1000,
+          maxTokens: 100,
+          compat: { strict: true },
+          inputLimits: { maxImages: 4 },
+        },
+      ],
+    };
+    const config = planProviderConfig(plan, mapped, "http://127.0.0.1:8801");
+    const models = config.models as { id: string; baseUrl: string; compat?: unknown; inputLimits?: unknown }[];
+    const found = models.find((model) => model.id === "chat");
+    expect(found?.baseUrl).toBe("http://127.0.0.1:8801");
+    expect(found?.compat).toEqual({ strict: true });
+    expect(found?.inputLimits).toEqual({ maxImages: 4 });
+  });
+
   test("non-chat models are carried through a registration untouched", () => {
     const extras = new Map([["aaa", [{ id: "image-model", api: "openai-images" }]]]);
     const config = planProviderConfig(plan, group, "http://127.0.0.1:8801", extras);

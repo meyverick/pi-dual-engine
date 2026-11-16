@@ -15,6 +15,9 @@ export type ProviderModel = {
   };
   readonly contextWindow: number;
   readonly maxTokens: number;
+  readonly thinkingLevelMap?: Record<string, string | null>;
+  readonly compat?: unknown;
+  readonly inputLimits?: unknown;
 };
 export type ProviderGroup = { readonly provider: string; readonly models: readonly ProviderModel[] };
 

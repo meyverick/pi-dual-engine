@@ -22,14 +22,7 @@ export function planProviderConfig(
     const family = familyOf(model.api);
     const carried = family !== undefined && plan.families.includes(family);
     return {
-      id: model.id,
-      name: model.name,
-      api: model.api,
-      reasoning: model.reasoning,
-      input: model.input,
-      cost: model.cost,
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
+      ...model,
       baseUrl: carried ? proxyUrl : model.baseUrl,
     };
   });

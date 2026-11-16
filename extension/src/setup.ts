@@ -78,8 +78,14 @@ function resolveWindowsNodeShim(executable: string, depth = 0, seen = new Set<st
   const exeTarget = forwardsToBatch || jsTarget ? null : parseWindowsExeShim(source);
   const child = jsTarget ?? nested ?? exeTarget;
   if (!child) throw new Error(`cannot safely launch non-Node Windows command shim: ${normalized}`);
+  // A leading backslash without drive or UNC prefix (e.g. from `%dp0%\\...`) is
+  // drive-relative on Windows, not a complete path: `isAbsolute` reports it true
+  // on win32 but false on posix, so probe it via the shim directory like relatives.
+  const isDriveAbsolute = /^[A-Za-z]:[\\/]/.test(child);
+  const isUncAbsolute = /^[\\/]{2}/.test(child);
+  const isRootedRelative = !isDriveAbsolute && !isUncAbsolute && /^\\/.test(child);
   const target =
-    /^[A-Za-z]:[\\/]/.test(child) || isAbsolute(child)
+    !isRootedRelative && (isDriveAbsolute || isUncAbsolute || isAbsolute(child))
       ? child
       : resolve(dirname(normalized), ...child.split(/[\\/]+/));
   if (!existsSync(target) || !statSync(target).isFile()) {

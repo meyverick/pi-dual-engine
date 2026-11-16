@@ -1,6 +1,6 @@
 {
   "name": "pi-dual-engine",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "One-owner-per-byte coordination between the Caveman harness engine and the Headroom wire engine (dual-engine).",
   "type": "module",
   "pi": {
@@ -24,6 +24,7 @@
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@types/bun": "^1.4.4",
     "@types/node": "22.19.1",
+    "typebox": "^1.3.0",
     "typescript": "5.9.3"
   }
 }

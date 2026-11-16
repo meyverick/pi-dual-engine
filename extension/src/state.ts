@@ -42,6 +42,9 @@ export async function groupChatModels(ctx: ExtensionContext): Promise<ProviderGr
       cost: model.cost,
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens,
+      thinkingLevelMap: model.thinkingLevelMap,
+      compat: model.compat,
+      inputLimits: model.inputLimits,
     });
     grouped.set(model.provider, list);
   }
